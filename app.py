@@ -7,14 +7,14 @@ import fitz
 # Custom CSS for Markdown headings
 st.markdown("""
     <style>
-        .h1 { font-size: 26px; font-weight: 700; margin-bottom: 5px; }  /* Large & Bold */
-        .h2 { font-size: 24px; font-weight: 600; margin-bottom: 5px; }  /* Slightly Smaller & Less Bold */
-        .h3 { font-size: 22px; font-weight: 550; margin-bottom: 5px; }  /* Medium Size & Weight */
-        .h4 { font-size: 20px; font-weight: 500; margin-bottom: 5px; }  /* Getting Smaller */
-        .h5 { font-size: 18px; font-weight: 450; margin-bottom: 5px; }  /* Even Less Bold */
-        .h6 { font-size: 16px; font-weight: 400; margin-bottom: 5px; }  /* Smallest & Normal Weight */
+        .h1 { font-size: 19px !important; font-weight: 700; margin-bottom: 8px !important; }  /* Large & Bold */
+        .h2 { font-size: 16px !important; font-weight: 550; margin-bottom: 2px; }  /* Slightly Smaller & Less Bold */
+        .h3 { font-size: 14px !important; font-weight: 550; margin-bottom: 2px; }  /* Medium Size & Weight */
+        .h4 { font-size: 12px !important; font-weight: 500; margin-bottom: 2px; }  /* Getting Smaller */
+        .h5 { font-size: 10px !important; font-weight: 450; margin-bottom: 2px; }  /* Even Less Bold */
+        .h6 { font-size: 8px !important; font-weight: 400; margin-bottom: 2px; }  /* Smallest & Normal Weight */
         .markdown-box {
-            border: 1px solid #ddd;
+            # border: 1px solid #ddd;
             padding: 10px;
             border-radius: 5px;
             background-color: #f9f9f9;
@@ -129,7 +129,7 @@ def get_arxiv_id(url):
     return None
 
 # Streamlit UI
-st.title("ArXiv Paper Outline Extractor")
+st.title("🔍 ArXiv Paper Outline Extractor")
 
 url_input = st.text_input("Enter the arXiv paper URL:")
 

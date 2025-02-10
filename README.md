@@ -4,6 +4,8 @@ Below are example files for your project:
 
 A lightweight Streamlit application that extracts and displays key sections from arXiv papers, including the title, abstract, and section headings. By leveraging the arXiv API and PDF parsing tools, this tool simplifies navigating academic research.
 
+![App Screenshot](demo.png)
+
 ## Features
 
 - **Metadata Extraction:** Retrieve the title and abstract of an arXiv paper.
