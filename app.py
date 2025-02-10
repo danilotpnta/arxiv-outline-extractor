@@ -130,21 +130,22 @@ def add_numbering_to_outline(outline):
       - Any level-1 heading *after* the conclusion is treated as an appendix section:
            • A new level-1 appendix gets a letter (A, B, …)
            • Its subheadings get numbering like “A.1”, “A.1.1”, etc.
-      - Subheadings always follow the numbering style of their parent level-1 heading.
+      - In numeric mode, when a new level-1 heading appears the subheading counters are reset,
+        so the first subheading will start at 1.
     """
     numbered_outline = []
     
-    # For numeric (main body) numbering.
+    # Counters for numeric (main body) numbering.
     numeric_counters = {}
     
-    # For appendix numbering.
+    # Counters for appendix numbering.
     appendix_counters = {}
     appendix_letter_counter = ord('A')
-    current_appendix_letter = None  # stores the letter for the current appendix section
+    current_appendix_letter = None  # Stores the letter for the current appendix section.
     
-    # This flag turns True as soon as we process a level-1 heading with a conclusion keyword.
+    # Flag: turns True when a level-1 heading with a conclusion keyword is encountered.
     main_body_complete = False  
-    # This variable records the numbering mode of the most recent level-1 heading.
+    # Indicates the numbering mode of the most recent level-1 heading.
     current_main_mode = "numeric"  # "numeric" or "appendix"
     
     # Keywords that mark the end of the main body.
@@ -166,7 +167,7 @@ def add_numbering_to_outline(outline):
                 m = re.match(r'^(\d+)\s+(.*)', text)
                 if m:
                     num = int(m.group(1))
-                    numeric_counters[1] = num  # use the existing number
+                    numeric_counters[1] = num  # Use the existing number.
                     clean_text = m.group(2)
                     new_text = f"{num} {clean_text}"
                 else:
@@ -175,18 +176,21 @@ def add_numbering_to_outline(outline):
                     clean_text = text
 
                 numbered_outline.append(f"{'#' * heading_level} {new_text}")
+                # Reset any subheading counters when a new level-1 heading is processed.
+                for lvl in list(numeric_counters.keys()):
+                    if lvl > 1:
+                        numeric_counters[lvl] = 0
                 current_main_mode = "numeric"
                 
-                # If this heading contains a conclusion keyword, then mark the main body as complete.
+                # If this heading contains a conclusion keyword, mark the main body as complete.
                 if any(kw.lower() in clean_text.lower() for kw in conclusion_keywords):
                     main_body_complete = True
-                    # (The Conclusion heading itself remains numeric.)
             else:
                 # This is a level-1 heading after the main body (after Conclusion)
                 # Switch to appendix mode.
                 current_appendix_letter = chr(appendix_letter_counter)
                 appendix_letter_counter += 1
-                appendix_counters = {}  # reset appendix subheading counters
+                appendix_counters = {}  # Reset appendix subheading counters.
                 numbered_outline.append(f"{'#' * heading_level} {current_appendix_letter} {text}")
                 current_main_mode = "appendix"
         else:
@@ -210,7 +214,7 @@ def add_numbering_to_outline(outline):
                 for lvl in list(appendix_counters.keys()):
                     if lvl > heading_level:
                         appendix_counters[lvl] = 0
-                numbering_parts = [current_appendix_letter]  # start with the current appendix letter
+                numbering_parts = [current_appendix_letter]  # Start with the current appendix letter.
                 # For level 2 and deeper, append the hierarchical counters.
                 for lvl in range(2, heading_level + 1):
                     numbering_parts.append(str(appendix_counters.get(lvl, 0)))
