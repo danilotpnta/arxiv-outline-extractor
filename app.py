@@ -59,9 +59,66 @@ def generate_markdown_outline(headings):
         markdown_lines.append(header_line)
     return "\n".join(markdown_lines)
 
+def add_numbering_to_outline(outline):
+    """
+    Add numbering to the generated Markdown outline based on heading levels.
+    Switch to alphabetical numbering after the Conclusion.
+    """
+    numbered_outline = []
+    counters = {}  # To hold counters for each heading level
+    appendices_started = False  # Flag to mark the start of the appendices
+    letter_counter = ord('A')  # Start alphabetically with 'A'
+    last_final_num = 6  # Track the last conclusion number
+
+    for line in outline.split("\n"):
+        # Identify the level of the heading by counting the number of '#' symbols
+        heading_level = line.count('#')
+        if heading_level == 0:
+            numbered_outline.append(line)
+            continue
+
+        # If the heading is "Conclusion" or similar, switch to appendices
+        if not appendices_started:
+            conclusion_keywords = ["Conclusion", "Concluding", "Final Remarks", "Summary"]
+            if any(keyword in line for keyword in conclusion_keywords):
+                appendices_started = True
+                # Keep the last numeric number for the conclusion section
+                numbered_outline.append(f"# {last_final_num} {line.lstrip('#').strip()}")
+                continue
+
+        # Handle normal numbering (numeric) for main content
+        if not appendices_started:
+            if heading_level not in counters:
+                counters[heading_level] = 0
+            if heading_level > 1:
+                # Reset sub-level counters when a new higher level heading appears
+                for i in range(heading_level + 1, max(counters.keys()) + 1):
+                    counters[i] = 0
+
+            counters[heading_level] += 1
+            numbering = '.'.join(str(counters[i]) for i in range(1, heading_level + 1))
+
+            # Generate the numbered heading
+            numbered_outline.append(f"{'#' * heading_level} {numbering} {line.lstrip('#').strip()}")
+
+        # Handle alphabetical numbering for appendices
+        else:
+            # Alphabetical numbering: A, B, C, etc.
+            appendix_prefix = chr(letter_counter)
+            numbered_outline.append(f"# {appendix_prefix} {line.lstrip('#').strip()}")
+            letter_counter += 1
+
+            # Dynamically handle sub-levels (A.1, A.2, B.1, etc.)
+            if heading_level > 1:
+                numbering = f"{appendix_prefix}." + ".".join(str(counters[i]) for i in range(2, heading_level + 1))
+                numbered_outline.append(f"{'#' * heading_level} {numbering} {line.lstrip('#').strip()}")
+                counters[heading_level] += 1
+
+    return "\n".join(numbered_outline)
+
 def get_arxiv_id(url):
     """
-    Extracts the arXiv ID from a URL.
+    Extracts the arXv ID from a URL.
     Supports URLs like:
       - https://arxiv.org/abs/2102.00001
       - https://arxiv.org/pdf/2102.00001.pdf
@@ -78,16 +135,16 @@ url_input = st.text_input("Enter the arXiv paper URL:")
 if url_input:
     arxiv_id = get_arxiv_id(url_input)
     if not arxiv_id:
-        st.error("Could not extract arXiv ID. Please check your URL.")
+        st.error("Could not extract arXv ID. Please check your URL.")
     else:
-        st.info(f"Extracted arXiv ID: {arxiv_id}")
+        st.info(f"Extracted arXv ID: {arxiv_id}")
 
         # Fetch paper metadata using the arxiv package.
         try:
             search = arxiv.Search(id_list=[arxiv_id])
             paper = next(search.results())
         except StopIteration:
-            st.error("No results found for this arXiv ID.")
+            st.error("No results found for this arXv ID.")
         except Exception as e:
             st.error(f"Error fetching metadata: {e}")
         else:
@@ -97,7 +154,6 @@ if url_input:
 
             # Download the PDF file.
             pdf_url = paper.pdf_url
-            st.write("Downloading PDF...")
             try:
                 response = requests.get(pdf_url)
                 response.raise_for_status()
@@ -107,7 +163,6 @@ if url_input:
                 pdf_bytes = None
 
             if pdf_bytes:
-                st.write("Extracting paper outline...")
 
                 # Try extracting the embedded TOC; if not available, use regex-based extraction.
                 headings = extract_pdf_toc(pdf_bytes)
@@ -119,17 +174,27 @@ if url_input:
 
                 if headings:
                     markdown_outline = generate_markdown_outline(headings)
+                    numbered_outline = add_numbering_to_outline(markdown_outline)
                     st.subheader("Generated Markdown Outline")
                     
-                    # Create a two-column layout: left for raw Markdown, right for rendered Markdown.
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.text_area("Markdown Outline (raw)", value=markdown_outline, height=400)
-                        st.download_button(
-                            label="Download Outline as Markdown",
-                            data=markdown_outline,
-                            file_name="OUTLINE.md",
-                            mime="text/markdown"
-                        )
-                    with col2:
-                        st.markdown(markdown_outline)
+                    st.text_area("Markdown Outline (raw)", value=numbered_outline, height=400)
+                    st.download_button(
+                        label="Download Outline as Markdown",
+                        data=numbered_outline,
+                        file_name="OUTLINE.md",
+                        mime="text/markdown"
+                    )
+                    # with col2:
+                    #     # Apply custom CSS to the right panel to make text smaller
+                    #     st.markdown(
+                    #         """
+                    #         <style>
+                    #         #right-panel markdown {
+                    #             font-size: 12px !important;
+                    #         }
+                    #         </style>
+                    #         """, 
+                    #         unsafe_allow_html=True
+                    #     )
+                    #     # Add custom id for the right panel
+                    #     right_panel = st.markdown(numbered_outline, key="right-panel")
