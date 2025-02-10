@@ -4,6 +4,7 @@ import arxiv
 import requests
 import fitz  
 import uuid
+import pyperclip
 
 # Custom CSS for Markdown headings with added indentation for subsections
 st.markdown("""
@@ -258,17 +259,28 @@ def process_pdf(pdf_bytes, title=None):
 
         with col1:
             st.subheader("Markdown Outline")
-            num_lines = numbered_outline.count("\n") + 1
+            # Calculate dynamic height based on the number of lines.
+            raw_markdown = numbered_outline
+            num_lines = raw_markdown.count("\n") + 1
+            # Estimate 25 pixels per line; adjust as needed.
             height_value = max(150, num_lines * 25)
-            markdown_text = st.text_area("Raw Markdown Output", value=numbered_outline, height=height_value)
+            # Display the raw markdown in a text area.
+            markdown_text = st.text_area("Raw Markdown Output", value=raw_markdown, height=height_value)
+            
             unique_key = f"download_button_{uuid.uuid4()}"
             st.download_button(
-                label="Download as Markdown",
-                data=numbered_outline,
+                label="📄 Download as Markdown",
+                data=raw_markdown,
                 file_name="outline.md",
                 mime="text/markdown",
                 key=unique_key
             )
+            
+            # Use pyperclip to copy the markdown when the button is clicked.
+            if st.button('✂️ Copy Markdown'):
+                # This copies the content of the text area to the clipboard.
+                pyperclip.copy(markdown_text)
+                st.success('Markdown copied successfully!')
 
         with col2:
             st.subheader("Rendered Outline")
