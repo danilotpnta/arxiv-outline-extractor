@@ -3,22 +3,51 @@ import re
 import arxiv
 import requests
 import fitz  
+import uuid
 
-# Custom CSS for Markdown headings
+# Custom CSS for Markdown headings with added indentation for subsections
 st.markdown("""
     <style>
-        .h1 { font-size: 19px !important; font-weight: 700; margin-bottom: 8px !important; }
-        .h2 { font-size: 16px !important; font-weight: 550; margin-bottom: 2px; }
-        .h3 { font-size: 14px !important; font-weight: 550; margin-bottom: 2px; }
-        .h4 { font-size: 12px !important; font-weight: 500; margin-bottom: 2px; }
-        .h5 { font-size: 10px !important; font-weight: 450; margin-bottom: 2px; }
-        .h6 { font-size: 8px !important; font-weight: 400; margin-bottom: 2px; }
+        .h1 {
+            font-size: 19px !important;
+            font-weight: 700;
+            margin-bottom: 8px !important;
+            margin-left: 0px;
+        }
+        .h2 {
+            font-size: 16px !important;
+            font-weight: 550;
+            margin-bottom: 2px;
+            margin-left: 20px !important;
+        }
+        .h3 {
+            font-size: 14px !important;
+            font-weight: 550;
+            margin-bottom: 2px;
+            margin-left: 40px !important;
+        }
+        .h4 {
+            font-size: 12px !important;
+            font-weight: 500;
+            margin-bottom: 2px;
+            margin-left: 60px !important;
+        }
+        .h5 {
+            font-size: 10px !important;
+            font-weight: 450;
+            margin-bottom: 2px;
+            margin-left: 80px !important;
+        }
+        .h6 {
+            font-size: 8px !important;
+            font-weight: 400;
+            margin-bottom: 2px;
+            margin-left: 100px !important;
+        }
         .markdown-box {
             padding: 10px;
             border-radius: 5px;
             background-color: #f9f9f9;
-            overflow-y: auto;
-            max-height: 500px;
             padding-left: 15px;
         }
     </style>
@@ -35,24 +64,52 @@ def extract_pdf_toc(pdf_bytes):
         return None
 
 def extract_headings_regex(pdf_bytes, max_pages=5):
-    """Extract headings using regex if TOC is not available."""
+    """Extract headings using regex starting from Introduction."""
     headings = []
+    found_introduction = False
+    
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     except Exception as e:
         st.error(f"Error opening PDF: {e}")
         return headings
 
-    heading_pattern = re.compile(r'^\s*(\d+(?:\.\d+)*)\s+(.+)$', re.MULTILINE)
+    # Pattern to match both numbered and unnumbered headings
+    heading_patterns = [
+        r'^\s*(?:\d+(?:\.\d+)*\s+)?(?:Introduction|INTRODUCTION)(.*)$',  # Introduction pattern
+        r'^\s*(\d+(?:\.\d+)*)\s+(.+)$',  # Numbered heading pattern
+        r'^\s*(Chapter|Section|Appendix)\s+([A-Z0-9][-\w\s]*:?.*)$'  # Other patterns
+    ]
+    
+    patterns = [re.compile(pattern, re.MULTILINE) for pattern in heading_patterns]
 
     for page_num in range(min(max_pages, doc.page_count)):
         page = doc.load_page(page_num)
         text = page.get_text()
-        for match in heading_pattern.finditer(text):
-            numbering = match.group(1)
-            title = match.group(2).strip()
-            level = numbering.count('.') + 1
-            headings.append((level, f"{numbering} {title}", page_num + 1))
+        
+        # First look for Introduction if we haven't found it yet
+        if not found_introduction:
+            intro_match = patterns[0].search(text)
+            if intro_match:
+                found_introduction = True
+                headings.append((1, "Introduction" + (intro_match.group(1) or ""), page_num + 1))
+                continue
+
+        # Only process other headings after finding introduction
+        if found_introduction:
+            for pattern in patterns[1:]:
+                for match in pattern.finditer(text):
+                    if len(match.groups()) == 2:
+                        numbering = match.group(1)
+                        title = match.group(2).strip()
+                        
+                        # Skip any institution or author information
+                        if any(keyword.lower() in title.lower() for keyword in 
+                            ['university', 'school of', 'department of', 'institute']):
+                            continue
+                            
+                        level = numbering.count('.') + 1 if numbering else 1
+                        headings.append((level, title, page_num + 1))
     
     return headings
 
@@ -65,12 +122,33 @@ def generate_markdown_outline(headings):
     return "\n".join(markdown_lines)
 
 def add_numbering_to_outline(outline):
-    """Adds numbering to the generated Markdown outline based on heading levels."""
+    """
+    Re-numbers the outline so that:
+      - All level-1 headings are numbered numerically until a level-1 heading contains one
+        of the conclusion keywords (e.g., "Conclusion", "Concluding", "Final Remarks", "Summary").
+      - The Conclusion heading itself remains numeric (so its subheadings will be numbered like “6.1”, etc.).
+      - Any level-1 heading *after* the conclusion is treated as an appendix section:
+           • A new level-1 appendix gets a letter (A, B, …)
+           • Its subheadings get numbering like “A.1”, “A.1.1”, etc.
+      - Subheadings always follow the numbering style of their parent level-1 heading.
+    """
     numbered_outline = []
-    counters = {}  
-    appendices_started = False  
-    letter_counter = ord('A')  
-    last_final_num = 6  
+    
+    # For numeric (main body) numbering.
+    numeric_counters = {}
+    
+    # For appendix numbering.
+    appendix_counters = {}
+    appendix_letter_counter = ord('A')
+    current_appendix_letter = None  # stores the letter for the current appendix section
+    
+    # This flag turns True as soon as we process a level-1 heading with a conclusion keyword.
+    main_body_complete = False  
+    # This variable records the numbering mode of the most recent level-1 heading.
+    current_main_mode = "numeric"  # "numeric" or "appendix"
+    
+    # Keywords that mark the end of the main body.
+    conclusion_keywords = ["Conclusion", "Concluding", "Final Remarks", "Summary"]
 
     for line in outline.split("\n"):
         heading_level = line.count('#')
@@ -78,34 +156,71 @@ def add_numbering_to_outline(outline):
             numbered_outline.append(line)
             continue
 
-        if not appendices_started:
-            conclusion_keywords = ["Conclusion", "Concluding", "Final Remarks", "Summary"]
-            if any(keyword in line for keyword in conclusion_keywords):
-                appendices_started = True
-                numbered_outline.append(f"# {last_final_num} {line.lstrip('#').strip()}")
-                continue
+        # Remove markdown markers and extra whitespace.
+        text = line.lstrip('#').strip()
 
-        if not appendices_started:
-            if heading_level not in counters:
-                counters[heading_level] = 0
-            if heading_level > 1:
-                for i in range(heading_level + 1, max(counters.keys()) + 1):
-                    counters[i] = 0
+        if heading_level == 1:
+            # Process level-1 headings.
+            if not main_body_complete:
+                # Process in numeric mode.
+                m = re.match(r'^(\d+)\s+(.*)', text)
+                if m:
+                    num = int(m.group(1))
+                    numeric_counters[1] = num  # use the existing number
+                    clean_text = m.group(2)
+                    new_text = f"{num} {clean_text}"
+                else:
+                    numeric_counters[1] = numeric_counters.get(1, 0) + 1
+                    new_text = f"{numeric_counters[1]} {text}"
+                    clean_text = text
 
-            counters[heading_level] += 1
-            numbering = '.'.join(str(counters[i]) for i in range(1, heading_level + 1))
-
-            numbered_outline.append(f"{'#' * heading_level} {numbering} {line.lstrip('#').strip()}")
-
+                numbered_outline.append(f"{'#' * heading_level} {new_text}")
+                current_main_mode = "numeric"
+                
+                # If this heading contains a conclusion keyword, then mark the main body as complete.
+                if any(kw.lower() in clean_text.lower() for kw in conclusion_keywords):
+                    main_body_complete = True
+                    # (The Conclusion heading itself remains numeric.)
+            else:
+                # This is a level-1 heading after the main body (after Conclusion)
+                # Switch to appendix mode.
+                current_appendix_letter = chr(appendix_letter_counter)
+                appendix_letter_counter += 1
+                appendix_counters = {}  # reset appendix subheading counters
+                numbered_outline.append(f"{'#' * heading_level} {current_appendix_letter} {text}")
+                current_main_mode = "appendix"
         else:
-            appendix_prefix = chr(letter_counter)
-            numbered_outline.append(f"# {appendix_prefix} {line.lstrip('#').strip()}")
-            letter_counter += 1
+            # Process subheadings (level > 1).
+            if current_main_mode == "numeric":
+                # Use numeric numbering.
+                text_without_number = re.sub(r'^\d+(\.\d+)*\s+', '', text)
+                numeric_counters[heading_level] = numeric_counters.get(heading_level, 0) + 1
+                # Reset counters for any deeper levels.
+                for lvl in list(numeric_counters.keys()):
+                    if lvl > heading_level:
+                        numeric_counters[lvl] = 0
+                numbering_parts = []
+                for lvl in range(1, heading_level + 1):
+                    numbering_parts.append(str(numeric_counters.get(lvl, 0)))
+                numbering = ".".join(numbering_parts)
+                numbered_outline.append(f"{'#' * heading_level} {numbering} {text_without_number}")
+            else:
+                # Use appendix numbering.
+                appendix_counters[heading_level] = appendix_counters.get(heading_level, 0) + 1
+                for lvl in list(appendix_counters.keys()):
+                    if lvl > heading_level:
+                        appendix_counters[lvl] = 0
+                numbering_parts = [current_appendix_letter]  # start with the current appendix letter
+                # For level 2 and deeper, append the hierarchical counters.
+                for lvl in range(2, heading_level + 1):
+                    numbering_parts.append(str(appendix_counters.get(lvl, 0)))
+                numbering = ".".join(numbering_parts)
+                numbered_outline.append(f"{'#' * heading_level} {numbering} {text}")
 
     return "\n".join(numbered_outline)
 
 def convert_markdown_to_html(markdown_text):
-    """Converts markdown headings to HTML with adjusted font size & boldness."""
+    """Converts markdown headings to HTML with adjusted font size, boldness, and indentation."""
     html_output = []
     lines = markdown_text.strip().split("\n")
 
@@ -135,16 +250,20 @@ def process_pdf(pdf_bytes, title=None):
         markdown_outline = generate_markdown_outline(headings)
         numbered_outline = add_numbering_to_outline(markdown_outline)
 
-        col1, col2 = st.columns([1, 1])
+        col1, col2 = st.columns([4, 5])
 
         with col1:
             st.subheader("Markdown Outline")
-            markdown_text = st.text_area("Raw Markdown Output", value=numbered_outline, height=400)
+            num_lines = numbered_outline.count("\n") + 1
+            height_value = max(150, num_lines * 25)
+            markdown_text = st.text_area("Raw Markdown Output", value=numbered_outline, height=height_value)
+            unique_key = f"download_button_{uuid.uuid4()}"
             st.download_button(
                 label="Download as Markdown",
                 data=numbered_outline,
                 file_name="outline.md",
-                mime="text/markdown"
+                mime="text/markdown",
+                key=unique_key
             )
 
         with col2:
@@ -178,7 +297,6 @@ with tab1:
         else:
             st.info(f"Extracted arXiv ID: {arxiv_id}")
 
-            # Fetch paper metadata
             try:
                 search = arxiv.Search(id_list=[arxiv_id])
                 paper = next(search.results())
@@ -191,7 +309,6 @@ with tab1:
                 with st.expander("Abstract"):
                     st.write(paper.summary)
 
-                # Download the PDF
                 pdf_url = paper.pdf_url
                 try:
                     response = requests.get(pdf_url)
@@ -208,11 +325,6 @@ with tab2:
     uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
     
     if uploaded_file is not None:
-        # Get the PDF bytes from the uploaded file
         pdf_bytes = uploaded_file.read()
-        
-        # Display file name as title
         st.header(uploaded_file.name)
-        
-        # Process the PDF
         process_pdf(pdf_bytes, uploaded_file.name)
