@@ -6,6 +6,10 @@ import fitz
 import uuid
 import pyperclip
 
+# st.set_page_config(
+#     page_title="Paper Outline Extractor",
+#     layout="wide"
+# )
 # Custom CSS for Markdown headings with added indentation for subsections
 st.markdown("""
     <style>
@@ -247,7 +251,7 @@ def get_arxiv_id(url):
         return match.group(2)
     return None
 
-def process_pdf(pdf_bytes, title=None):
+def process_pdf_(pdf_bytes, title=None):
     """Process PDF content and display results."""
     headings = extract_pdf_toc(pdf_bytes) or extract_headings_regex(pdf_bytes, max_pages=7)
     
@@ -277,7 +281,8 @@ def process_pdf(pdf_bytes, title=None):
             )
             
             # Use pyperclip to copy the markdown when the button is clicked.
-            if st.button('✂️ Copy Markdown'):
+            if st.button('✂️ Copy Markdown',
+                         key=f"copy_markdown_{uuid.uuid4()}"):
                 # This copies the content of the text area to the clipboard.
                 pyperclip.copy(markdown_text)
                 st.success('Markdown copied successfully!')
@@ -291,6 +296,130 @@ def process_pdf(pdf_bytes, title=None):
             """, unsafe_allow_html=True)
 
             converted_html = convert_markdown_to_html(numbered_outline)
+            st.markdown(f'<div class="markdown-box">{converted_html}</div>', unsafe_allow_html=True)
+
+    else:
+        st.info("No headings found in the PDF.")
+
+def process_pdf__(pdf_bytes, title=None):
+    """Process PDF content and display results."""
+    headings = extract_pdf_toc(pdf_bytes) or extract_headings_regex(pdf_bytes, max_pages=7)
+
+    if headings:
+        markdown_outline = generate_markdown_outline(headings)
+        numbered_outline = add_numbering_to_outline(markdown_outline)
+
+        # Initialize session state for Markdown storage
+        if "markdown_text" not in st.session_state:
+            st.session_state.markdown_text = numbered_outline
+        
+        col1, col2 = st.columns([4, 5])
+
+        with col1:
+            st.subheader("Markdown Outline")
+            
+            # Editable text area
+            markdown_text = st.text_area(
+                "Raw Markdown Output", 
+                value=st.session_state.markdown_text, 
+                height=300, 
+                key="editable_markdown"
+            )
+
+            # Update session state when button is clicked
+            if st.button("🔄 Rerender Markdown"):
+                st.session_state.markdown_text = markdown_text  # Update stored Markdown
+
+            unique_key = f"download_button_{uuid.uuid4()}"
+            st.download_button(
+                label="📄 Download as Markdown",
+                data=markdown_text,
+                file_name="outline.md",
+                mime="text/markdown",
+                key=unique_key
+            )
+
+            if st.button('✂️ Copy Markdown'):
+                pyperclip.copy(markdown_text)
+                st.success('Markdown copied successfully!')
+
+        with col2:
+            st.subheader("Rendered Outline")
+            converted_html = convert_markdown_to_html(st.session_state.markdown_text)
+            st.markdown(f'<div class="markdown-box">{converted_html}</div>', unsafe_allow_html=True)
+
+    else:
+        st.info("No headings found in the PDF.")
+
+import streamlit as st
+# ... (previous imports remain the same)
+
+def clear_session_state():
+    """Clear the markdown text from session state"""
+    if "markdown_text" in st.session_state:
+        del st.session_state.markdown_text
+    if "current_tab" in st.session_state:
+        del st.session_state.current_tab
+
+def process_pdf(pdf_bytes, title=None, source_tab=None):
+    """Process PDF content and display results."""
+    headings = extract_pdf_toc(pdf_bytes) or extract_headings_regex(pdf_bytes, max_pages=7)
+    
+    if headings:
+        markdown_outline = generate_markdown_outline(headings)
+        numbered_outline = add_numbering_to_outline(markdown_outline)
+
+        # Initialize session state for Markdown storage
+        if "markdown_text" not in st.session_state:
+            st.session_state.markdown_text = numbered_outline
+        
+        # Store current tab
+        if "current_tab" not in st.session_state:
+            st.session_state.current_tab = source_tab
+        # Clear state if tab changed
+        elif st.session_state.current_tab != source_tab:
+            st.session_state.markdown_text = numbered_outline
+            st.session_state.current_tab = source_tab
+        
+        col1, col2 = st.columns([4, 5])
+
+        with col1:
+            st.subheader("Markdown Outline")
+            
+            # Use unique key based on tab and title
+            text_area_key = f"editable_markdown_{source_tab}_{title}"
+            markdown_text = st.text_area(
+                "Raw Markdown Output", 
+                value=st.session_state.markdown_text, 
+                height=300, 
+                key=text_area_key
+            )
+
+            # Update session state when button is clicked
+            if st.button("🔄 Rerender Markdown", key=f"rerender_{source_tab}"):
+                st.session_state.markdown_text = markdown_text
+
+            unique_key = f"download_button_{uuid.uuid4()}"
+            st.download_button(
+                label="📄 Download as Markdown",
+                data=markdown_text,
+                file_name="outline.md",
+                mime="text/markdown",
+                key=unique_key
+            )
+
+            if st.button('✂️ Copy Markdown', key=f"copy_{source_tab}"):
+                pyperclip.copy(markdown_text)
+                st.success('Markdown copied successfully!')
+
+        with col2:
+            st.subheader("Rendered Outline")
+            st.markdown("""
+                <p style="font-size: 14px; font-weight: 500; margin-bottom: 6px;">
+                    Rendered Markdown Outline
+                </p>
+            """, unsafe_allow_html=True)
+            converted_html = convert_markdown_to_html(st.session_state.markdown_text)
             st.markdown(f'<div class="markdown-box">{converted_html}</div>', unsafe_allow_html=True)
 
     else:
@@ -335,12 +464,12 @@ with tab1:
                     pdf_bytes = None
 
                 if pdf_bytes:
-                    process_pdf(pdf_bytes, paper.title)
+                    process_pdf(pdf_bytes, paper.title, source_tab="arxiv")
 
 with tab2:
-    uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
+    uploaded_file = st.file_uploader("Upload a PDF file", type="pdf", key="pdf_uploader")
     
     if uploaded_file is not None:
         pdf_bytes = uploaded_file.read()
         st.header(uploaded_file.name)
-        process_pdf(pdf_bytes, uploaded_file.name)
+        process_pdf(pdf_bytes, uploaded_file.name, source_tab="upload")
