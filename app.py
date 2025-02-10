@@ -7,14 +7,13 @@ import fitz
 # Custom CSS for Markdown headings
 st.markdown("""
     <style>
-        .h1 { font-size: 19px !important; font-weight: 700; margin-bottom: 8px !important; }  /* Large & Bold */
-        .h2 { font-size: 16px !important; font-weight: 550; margin-bottom: 2px; }  /* Slightly Smaller & Less Bold */
-        .h3 { font-size: 14px !important; font-weight: 550; margin-bottom: 2px; }  /* Medium Size & Weight */
-        .h4 { font-size: 12px !important; font-weight: 500; margin-bottom: 2px; }  /* Getting Smaller */
-        .h5 { font-size: 10px !important; font-weight: 450; margin-bottom: 2px; }  /* Even Less Bold */
-        .h6 { font-size: 8px !important; font-weight: 400; margin-bottom: 2px; }  /* Smallest & Normal Weight */
+        .h1 { font-size: 19px !important; font-weight: 700; margin-bottom: 8px !important; }
+        .h2 { font-size: 16px !important; font-weight: 550; margin-bottom: 2px; }
+        .h3 { font-size: 14px !important; font-weight: 550; margin-bottom: 2px; }
+        .h4 { font-size: 12px !important; font-weight: 500; margin-bottom: 2px; }
+        .h5 { font-size: 10px !important; font-weight: 450; margin-bottom: 2px; }
+        .h6 { font-size: 8px !important; font-weight: 400; margin-bottom: 2px; }
         .markdown-box {
-            # border: 1px solid #ddd;
             padding: 10px;
             border-radius: 5px;
             background-color: #f9f9f9;
@@ -128,72 +127,92 @@ def get_arxiv_id(url):
         return match.group(2)
     return None
 
-# Streamlit UI
-st.title("🔍 ArXiv Paper Outline Extractor")
-
-url_input = st.text_input("Enter the arXiv paper URL:")
-
-if url_input:
-    arxiv_id = get_arxiv_id(url_input)
+def process_pdf(pdf_bytes, title=None):
+    """Process PDF content and display results."""
+    headings = extract_pdf_toc(pdf_bytes) or extract_headings_regex(pdf_bytes, max_pages=7)
     
-    if not arxiv_id:
-        st.error("Could not extract arXiv ID. Please check your URL.")
+    if headings:
+        markdown_outline = generate_markdown_outline(headings)
+        numbered_outline = add_numbering_to_outline(markdown_outline)
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            st.subheader("Markdown Outline")
+            markdown_text = st.text_area("Raw Markdown Output", value=numbered_outline, height=400)
+            st.download_button(
+                label="Download as Markdown",
+                data=numbered_outline,
+                file_name="outline.md",
+                mime="text/markdown"
+            )
+
+        with col2:
+            st.subheader("Rendered Outline")
+            st.markdown("""
+                <p style="font-size: 14px; font-weight: 500; margin-bottom: 6px;">
+                    Rendered Markdown Outline
+                </p>
+            """, unsafe_allow_html=True)
+
+            converted_html = convert_markdown_to_html(numbered_outline)
+            st.markdown(f'<div class="markdown-box">{converted_html}</div>', unsafe_allow_html=True)
+
     else:
-        st.info(f"Extracted arXiv ID: {arxiv_id}")
+        st.info("No headings found in the PDF.")
 
-        # Fetch paper metadata
-        try:
-            search = arxiv.Search(id_list=[arxiv_id])
-            paper = next(search.results())
-        except StopIteration:
-            st.error("No results found for this arXiv ID.")
-        except Exception as e:
-            st.error(f"Error fetching metadata: {e}")
+# Streamlit UI
+st.title("🔍 Paper Outline Extractor")
+
+# Create tabs for different input methods
+tab1, tab2 = st.tabs(["ArXiv URL", "Upload PDF"])
+
+with tab1:
+    url_input = st.text_input("Enter the arXiv paper URL:")
+
+    if url_input:
+        arxiv_id = get_arxiv_id(url_input)
+        
+        if not arxiv_id:
+            st.error("Could not extract arXiv ID. Please check your URL.")
         else:
-            st.header(paper.title)
-            # st.subheader("Abstract")
-            with st.expander("Abstract"):
-                st.write(paper.summary)
+            st.info(f"Extracted arXiv ID: {arxiv_id}")
 
-            # Download the PDF
-            pdf_url = paper.pdf_url
+            # Fetch paper metadata
             try:
-                response = requests.get(pdf_url)
-                response.raise_for_status()
-                pdf_bytes = response.content
+                search = arxiv.Search(id_list=[arxiv_id])
+                paper = next(search.results())
+            except StopIteration:
+                st.error("No results found for this arXiv ID.")
             except Exception as e:
-                st.error(f"Error downloading PDF: {e}")
-                pdf_bytes = None
+                st.error(f"Error fetching metadata: {e}")
+            else:
+                st.header(paper.title)
+                with st.expander("Abstract"):
+                    st.write(paper.summary)
 
-            if pdf_bytes:
-                headings = extract_pdf_toc(pdf_bytes) or extract_headings_regex(pdf_bytes, max_pages=7)
-                
-                if headings:
-                    markdown_outline = generate_markdown_outline(headings)
-                    numbered_outline = add_numbering_to_outline(markdown_outline)
+                # Download the PDF
+                pdf_url = paper.pdf_url
+                try:
+                    response = requests.get(pdf_url)
+                    response.raise_for_status()
+                    pdf_bytes = response.content
+                except Exception as e:
+                    st.error(f"Error downloading PDF: {e}")
+                    pdf_bytes = None
 
-                    col1, col2 = st.columns([1, 1])
+                if pdf_bytes:
+                    process_pdf(pdf_bytes, paper.title)
 
-                    with col1:
-                        st.subheader("Markdown Outline")
-                        markdown_text = st.text_area("Raw Markdown Output", value=numbered_outline, height=400)
-                        st.download_button(
-                            label="Download as Markdown",
-                            data=numbered_outline,
-                            file_name="outline.md",
-                            mime="text/markdown"
-                        )
-
-                    with col2:
-                        st.subheader("Rendered Outline")
-                        st.markdown("""
-                            <p style="font-size: 14px; font-weight: 500; margin-bottom: 6px;">
-                                Rendered Markdown Outline
-                            </p>
-                        """, unsafe_allow_html=True)
-
-                        converted_html = convert_markdown_to_html(numbered_outline)
-                        st.markdown(f'<div class="markdown-box">{converted_html}</div>', unsafe_allow_html=True)
-
-                else:
-                    st.info("No headings found in the PDF.")
+with tab2:
+    uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
+    
+    if uploaded_file is not None:
+        # Get the PDF bytes from the uploaded file
+        pdf_bytes = uploaded_file.read()
+        
+        # Display file name as title
+        st.header(uploaded_file.name)
+        
+        # Process the PDF
+        process_pdf(pdf_bytes, uploaded_file.name)
